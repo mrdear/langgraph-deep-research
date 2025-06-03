@@ -38,3 +38,29 @@
 - **深度优化 Planning Prompt**：基于 Reference.md 的 DeepResearch 架构设计，重新设计了专业的规划提示词，包含详细的任务分解原则、输出格式规范和示例，并将其统一管理到 prompts.py 中。
 - 已本地测试通过，前后端联调无异常，单任务流程可用。
 - 下一步将继续完善多任务循环与更复杂的推理流程。
+
+## DAY 2 (Multi-Task Loop & Knowledge Accumulation)
+
+- **Multi-Task Loop Implementation**: Fully implemented the multi-task iteration mechanism allowing the agent to process all tasks in the generated plan sequentially.
+- **State Enhancements**: Extended OverallState with:
+  - `ledger`: Structured records of completed task findings (LedgerEntry objects)
+  - `global_summary_memory`: Cross-task memory accumulation for context preservation
+- **New Nodes**:
+  - `record_task_completion_node`: Records task completion, updates ledger and memory, increments task pointer
+  - `decide_next_step_in_plan`: Conditional routing function determining whether to continue with next task or finalize
+- **Flow Restructuring**: 
+  - evaluate_research → record_task_completion → decide_next_step_in_plan
+  - Conditional routing: next task (generate_query) or completion (finalize_answer)
+- **Enhanced Final Answer**: finalize_answer now synthesizes accumulated findings from all completed tasks using ledger entries and global memory
+- **Robust Task Summarization**: Each completed task generates a concise summary that feeds into the next iteration
+- Successfully tested: Graph compiles without errors, multi-task flow logic verified
+- Next: Advanced reasoning capabilities and dynamic task planning
+
+**Hotfixes after initial testing**:
+- Fixed loop termination issue: adjusted `max_research_loops` default from 2 to 3 (preventing excessive loops while allowing adequate research)
+- Note: `gemini-2.5-flash-preview-04-17` is free tier with RPM limitations, working correctly for current usage
+- Validated Day 2 implementation with simple weather query: ledger, global memory, and multi-task flow working correctly  
+- Loop termination conditions: (1) LLM deems information sufficient OR (2) reaches max 3 research loops per task
+- **Issue to investigate**: Test results showed `max_research_loops: 22` despite config default of 3, may be overridden by environment variable or runtime parameter
+
+---

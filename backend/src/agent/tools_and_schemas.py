@@ -30,3 +30,10 @@ class ResearchTask(BaseModel):
 
 class ResearchPlan(BaseModel):
     tasks: List[ResearchTask] = Field(description="A list of research tasks to be executed.")
+
+
+class LedgerEntry(BaseModel):
+    """Record of completed task findings for the ledger."""
+    task_id: str = Field(description="Unique identifier of the completed task")
+    description: str = Field(description="Original task description")
+    findings_summary: str = Field(description="Concise summary of key findings for this task")
