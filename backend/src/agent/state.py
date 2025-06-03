@@ -12,6 +12,14 @@ from dataclasses import dataclass, field
 from typing_extensions import Annotated
 
 
+class LedgerEntry(TypedDict):
+    task_id: str
+    description: str
+    findings_summary: str  # The concise (1-2 sentence) LLM-generated summary for this task
+    detailed_snippets: Optional[List[str]]  # List of relevant web_research_result strings
+    citations_for_snippets: Optional[List[Dict[str, str]]]  # Maps snippets to sources
+
+
 class OverallState(TypedDict):
     messages: Annotated[list, add_messages]
     user_query: str  # Store original user question
@@ -26,8 +34,13 @@ class OverallState(TypedDict):
     reasoning_model: str
     
     # --- Day 2 additions for multi-task iteration ---
-    ledger: Annotated[List[Dict[str, Any]], operator.add]  # Records of completed task findings
+    ledger: Annotated[List[LedgerEntry], operator.add]  # Records of completed task findings
     global_summary_memory: Annotated[List[str], operator.add]  # Cross-task memory accumulation
+    
+    # --- Day 3 additions for richer synthesis ---
+    current_task_detailed_findings: Annotated[List[Dict[str, Any]], operator.add]  # Temporary storage for current task's detailed findings
+    task_specific_results: Annotated[List[Dict[str, Any]], operator.add]  # Task-specific research results with task_id
+    final_report_markdown: Optional[str]  # The final synthesized report
 
 
 class ReflectionState(TypedDict):
@@ -36,6 +49,8 @@ class ReflectionState(TypedDict):
     follow_up_queries: Annotated[list, operator.add]
     research_loop_count: int
     number_of_ran_queries: int
+    plan: list
+    current_task_pointer: int
 
 
 class Query(TypedDict):
@@ -45,11 +60,14 @@ class Query(TypedDict):
 
 class QueryGenerationState(TypedDict):
     query_list: list[Query]
+    plan: list
+    current_task_pointer: int
 
 
 class WebSearchState(TypedDict):
     search_query: str
     id: str
+    current_task_id: str
 
 
 @dataclass(kw_only=True)
