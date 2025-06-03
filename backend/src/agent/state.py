@@ -14,7 +14,10 @@ from typing_extensions import Annotated
 
 class OverallState(TypedDict):
     messages: Annotated[list, add_messages]
-    search_query: Annotated[list, operator.add]
+    user_query: str  # 新增，存储用户原始问题
+    plan: list  # 新增，存储由 planner_node 生成的任务计划
+    current_task_pointer: int  # 新增，指向当前 plan 的任务索引
+    executed_search_queries: Annotated[list, operator.add]  # 原 search_query 字段重命名
     web_research_result: Annotated[list, operator.add]
     sources_gathered: Annotated[list, operator.add]
     initial_search_query_count: int

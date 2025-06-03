@@ -1,6 +1,7 @@
 import os
+import json
 
-from agent.tools_and_schemas import SearchQueryList, Reflection
+from agent.tools_and_schemas import SearchQueryList, Reflection, ResearchPlan
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 from langgraph.types import Send
@@ -22,6 +23,7 @@ from agent.prompts import (
     web_searcher_instructions,
     reflection_instructions,
     answer_instructions,
+    planning_instructions,
 )
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agent.utils import (
@@ -42,18 +44,7 @@ genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Nodes
 def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
-    """LangGraph node that generates a search queries based on the User's question.
-
-    Uses Gemini 2.0 Flash to create an optimized search query for web research based on
-    the User's question.
-
-    Args:
-        state: Current graph state containing the User's question
-        config: Configuration for the runnable, including LLM provider settings
-
-    Returns:
-        Dictionary with state update, including search_query key containing the generated query
-    """
+    """LangGraph node that generates search queries based on the current research task from the plan."""
     configurable = Configuration.from_runnable_config(config)
 
     # check for custom initial search query count
@@ -69,14 +60,21 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     )
     structured_llm = llm.with_structured_output(SearchQueryList)
 
-    # Format the prompt
+    # 新逻辑：优先基于 plan 当前任务生成查询
+    plan = state.get("plan")
+    pointer = state.get("current_task_pointer")
+    if plan and pointer is not None and pointer < len(plan):
+        research_topic = plan[pointer]["description"]
+    else:
+        # 回退到 user_query 或 messages
+        research_topic = state.get("user_query") or get_research_topic(state["messages"])
+
     current_date = get_current_date()
     formatted_prompt = query_writer_instructions.format(
         current_date=current_date,
-        research_topic=get_research_topic(state["messages"]),
+        research_topic=research_topic,
         number_queries=state["initial_search_query_count"],
     )
-    # Generate the search queries
     result = structured_llm.invoke(formatted_prompt)
     return {"query_list": result.query}
 
@@ -131,7 +129,7 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
 
     return {
         "sources_gathered": sources_gathered,
-        "search_query": [state["search_query"]],
+        "executed_search_queries": [state["search_query"]],
         "web_research_result": [modified_text],
     }
 
@@ -153,13 +151,22 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
     configurable = Configuration.from_runnable_config(config)
     # Increment the research loop count and get the reasoning model
     state["research_loop_count"] = state.get("research_loop_count", 0) + 1
-    reasoning_model = state.get("reasoning_model") or configurable.reasoning_model
+    reasoning_model = state.get("reasoning_model") or configurable.reflection_model
 
     # Format the prompt
     current_date = get_current_date()
+    
+    # 获取当前任务描述作为 research_topic
+    plan = state.get("plan")
+    pointer = state.get("current_task_pointer")
+    if plan and pointer is not None and pointer < len(plan):
+        research_topic = plan[pointer]["description"]
+    else:
+        research_topic = state.get("user_query") or get_research_topic(state["messages"])
+    
     formatted_prompt = reflection_instructions.format(
         current_date=current_date,
-        research_topic=get_research_topic(state["messages"]),
+        research_topic=research_topic,
         summaries="\n\n---\n\n".join(state["web_research_result"]),
     )
     # init Reasoning Model
@@ -176,7 +183,7 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         "knowledge_gap": result.knowledge_gap,
         "follow_up_queries": result.follow_up_queries,
         "research_loop_count": state["research_loop_count"],
-        "number_of_ran_queries": len(state["search_query"]),
+        "number_of_ran_queries": len(state["executed_search_queries"]),
     }
 
 
@@ -231,13 +238,14 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         Dictionary with state update, including running_summary key containing the formatted final summary with sources
     """
     configurable = Configuration.from_runnable_config(config)
-    reasoning_model = state.get("reasoning_model") or configurable.reasoning_model
+    reasoning_model = state.get("reasoning_model") or configurable.answer_model
 
     # Format the prompt
     current_date = get_current_date()
+    research_topic = state.get("user_query") or get_research_topic(state["messages"])
     formatted_prompt = answer_instructions.format(
         current_date=current_date,
-        research_topic=get_research_topic(state["messages"]),
+        research_topic=research_topic,
         summaries="\n---\n\n".join(state["web_research_result"]),
     )
 
@@ -265,18 +273,57 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     }
 
 
+def planner_node(state: OverallState, config: RunnableConfig) -> dict:
+    """LangGraph node that generates a multi-step research plan based on the user's question."""
+    configurable = Configuration.from_runnable_config(config)
+    llm = ChatGoogleGenerativeAI(
+        model=configurable.query_generator_model,
+        temperature=0.7,
+        max_retries=2,
+        api_key=os.getenv("GEMINI_API_KEY"),
+    )
+    structured_llm = llm.with_structured_output(ResearchPlan)
+
+    # 获取用户问题，优先从 user_query，回退到 messages
+    user_query = state.get("user_query") or get_research_topic(state["messages"])
+    
+    # 使用统一管理的 planning prompt
+    formatted_prompt = planning_instructions.format(user_query=user_query)
+    
+    try:
+        result = structured_llm.invoke(formatted_prompt)
+        # 转换 ResearchPlan 到预期格式
+        plan = [{"id": task.id, "description": task.description, "info_needed": True, "source_hint": task.description, "status": "pending"} for task in result.tasks]
+        
+        return {
+            "user_query": user_query,
+            "plan": plan,
+            "current_task_pointer": 0
+        }
+    except Exception as e:
+        print(f"Planning failed: {e}")
+        # 提供默认单任务计划作为兜底
+        return {
+            "user_query": user_query,
+            "plan": [{"id": "task-1", "description": f"研究并回答：{user_query}", "info_needed": True, "source_hint": user_query, "status": "pending"}],
+            "current_task_pointer": 0
+        }
+
+
 # Create our Agent Graph
 builder = StateGraph(OverallState, config_schema=Configuration)
 
 # Define the nodes we will cycle between
+builder.add_node("planner", planner_node)
 builder.add_node("generate_query", generate_query)
 builder.add_node("web_research", web_research)
 builder.add_node("reflection", reflection)
 builder.add_node("finalize_answer", finalize_answer)
 
-# Set the entrypoint as `generate_query`
+# Set the entrypoint as `planner`
 # This means that this node is the first one called
-builder.add_edge(START, "generate_query")
+builder.add_edge(START, "planner")
+builder.add_edge("planner", "generate_query")
 # Add conditional edge to continue with search queries in a parallel branch
 builder.add_conditional_edges(
     "generate_query", continue_to_web_research, ["web_research"]

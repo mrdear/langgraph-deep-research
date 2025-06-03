@@ -21,3 +21,20 @@
 > 本项目的长期目标是逐步实现 DeepResearch 方案（详见 Reference.md），每一步都确保可运行、可回滚。
 
 ---
+
+## DAY 1（引入显式规划与任务化研究流程）
+
+- 新增 planner_node 节点，基于用户问题自动生成结构化多步骤研究计划（plan），每步为一个可执行任务。
+- 扩展 OverallState，增加 user_query、plan、current_task_pointer 字段，支持任务化流程。
+- generate_query 节点改造为基于当前 plan 任务生成具体搜索查询。
+- LangGraph 主流程调整为：planner_node -> generate_query -> web_research ...，为后续多任务循环奠定基础。
+
+**修复与优化：**
+- 修复了 planner_node 的异常问题，采用 `llm.with_structured_output(ResearchPlan)` 代替手动 JSON 解析。
+- 优化了 user_query 字段的获取逻辑，支持从 messages 回退获取。
+- 统一了字段名引用（search_query -> executed_search_queries），确保各节点间状态一致性。
+- 修复了 reflection 和 finalize_answer 节点中的配置字段名错误（reasoning_model -> reflection_model/answer_model）。
+- 修复了模型配置问题，将所有默认模型改为 gemini-2.0-flash（免费版本），避免配额限制错误。
+- **深度优化 Planning Prompt**：基于 Reference.md 的 DeepResearch 架构设计，重新设计了专业的规划提示词，包含详细的任务分解原则、输出格式规范和示例，并将其统一管理到 prompts.py 中。
+- 已本地测试通过，前后端联调无异常，单任务流程可用。
+- 下一步将继续完善多任务循环与更复杂的推理流程。

@@ -21,3 +21,12 @@ class Reflection(BaseModel):
     follow_up_queries: List[str] = Field(
         description="A list of follow-up queries to address the knowledge gap."
     )
+
+
+class ResearchTask(BaseModel):
+    id: str = Field(description="Unique identifier for the task.")
+    description: str = Field(description="A concise description of what this research task aims to achieve.")
+
+
+class ResearchPlan(BaseModel):
+    tasks: List[ResearchTask] = Field(description="A list of research tasks to be executed.")
