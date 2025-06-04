@@ -41,6 +41,26 @@ class OverallState(TypedDict):
     current_task_detailed_findings: Annotated[List[Dict[str, Any]], operator.add]  # Temporary storage for current task's detailed findings
     task_specific_results: Annotated[List[Dict[str, Any]], operator.add]  # Task-specific research results with task_id
     final_report_markdown: Optional[str]  # The final synthesized report
+    
+    # --- Reflection结果字段 ---
+    reflection_is_sufficient: Optional[bool]  # reflection判断的信息充足性
+    reflection_knowledge_gap: Optional[str]  # reflection识别的知识差距
+    reflection_follow_up_queries: Optional[List[str]]  # reflection建议的follow-up查询
+    number_of_ran_queries: Optional[int]  # 已执行的查询数量
+    
+    # --- 增强版评估结果字段 ---
+    evaluation_is_sufficient: Optional[bool]  # 最终评估的信息充足性
+    evaluation_should_continue: Optional[bool]  # 是否应该继续研究
+    evaluation_follow_up_queries: Optional[List[str]]  # 评估建议的follow-up查询
+    evaluation_research_complete: Optional[bool]  # 研究是否完成
+    evaluation_enhancement_boost: Optional[int]  # 内容增强带来的提升度
+    
+    # --- 智能内容增强字段 ---
+    enhancement_decision: Optional[Dict[str, Any]]  # 增强决策结果
+    enhancement_status: Optional[str]  # "skipped", "completed", "failed", "error", "analyzing"
+    enhanced_content_results: Optional[List[Dict[str, Any]]]  # Firecrawl增强内容结果
+    enhanced_sources_count: Optional[int]  # 成功增强的源数量
+    enhancement_error: Optional[str]  # 增强过程中的错误信息
 
 
 class ReflectionState(TypedDict):

@@ -19,6 +19,7 @@ dependencies = [
     "fastapi",
     "google-genai",
     "tiktoken>=0.8.0",
+    "firecrawl-py>=2.7.0",
 ]
 
 

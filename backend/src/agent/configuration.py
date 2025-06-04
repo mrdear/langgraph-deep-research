@@ -9,7 +9,7 @@ class Configuration(BaseModel):
     """The configuration for the agent."""
 
     query_generator_model: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-2.5-flash-preview-04-17",
         metadata={
             "description": "The name of the language model to use for the agent's query generation."
         },
@@ -30,12 +30,12 @@ class Configuration(BaseModel):
     )
 
     number_of_initial_queries: int = Field(
-        default=3,
+        default=6,
         metadata={"description": "The number of initial search queries to generate."},
     )
 
     max_research_loops: int = Field(
-        default=3,
+        default=8,
         metadata={"description": "The maximum number of research loops to perform."},
     )
 
