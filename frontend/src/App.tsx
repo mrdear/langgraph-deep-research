@@ -30,12 +30,30 @@ export default function App() {
       console.log(event);
     },
     onUpdateEvent: (event: any) => {
+      // 🐛 DEBUG: 完整事件日志
+      console.log("📨 收到事件:", event);
+      console.log("📊 事件结构分析:", {
+        eventKeys: Object.keys(event),
+        eventType: typeof event,
+        hasGenerateQuery: !!event.generate_query,
+        hasWebResearch: !!event.web_research,
+        hasReflection: !!event.reflection,
+        hasPlanner: !!(event.planner_node || event.planner),
+        hasContentEnhancement: !!event.content_enhancement_analysis,
+        hasEvaluateResearch: !!event.evaluate_research_enhanced,
+        hasFinalizeAnswer: !!event.finalize_answer,
+        hasRecordTaskCompletion: !!event.record_task_completion,
+        allEventKeys: Object.keys(event).join(", ")
+      });
+      
       let processedEvent: ProcessedEvent | null = null;
+      let eventProcessed = false;
       if (event.generate_query) {
         processedEvent = {
           title: "Generating Search Queries",
           data: event.generate_query.query_list.join(", "),
         };
+        eventProcessed = true;
       } else if (event.web_research) {
         const sources = event.web_research.sources_gathered || [];
         const numSources = sources.length;
@@ -49,22 +67,94 @@ export default function App() {
             exampleLabels || "N/A"
           }.`,
         };
+        eventProcessed = true;
       } else if (event.reflection) {
         processedEvent = {
           title: "Reflection",
-          data: event.reflection.is_sufficient
+          data: event.reflection.reflection_is_sufficient
             ? "Search successful, generating final answer."
-            : `Need more information, searching for ${event.reflection.follow_up_queries.join(
+            : `Need more information, searching for ${(event.reflection.reflection_follow_up_queries || []).join(
                 ", "
               )}`,
         };
+        eventProcessed = true;
+      } else if (event.planner_node || event.planner) {
+        const plannerData = event.planner_node || event.planner;
+        processedEvent = {
+          title: "Planning Research Strategy",
+          data: plannerData.plan 
+            ? `Generated ${plannerData.plan.length} research tasks`
+            : "Analyzing research requirements...",
+        };
+        eventProcessed = true;
+      } else if (event.content_enhancement_analysis) {
+        processedEvent = {
+          title: "Content Enhancement Analysis",
+          data: event.content_enhancement_analysis.needs_enhancement
+            ? `Enhancement needed: ${event.content_enhancement_analysis.reasoning || 'Analyzing content quality'}`
+            : "Content quality sufficient, proceeding with report generation",
+        };
+        eventProcessed = true;
+      } else if (event.evaluate_research_enhanced) {
+        processedEvent = {
+          title: "Research Quality Evaluation",
+          data: event.evaluate_research_enhanced.evaluation_is_sufficient
+            ? "Research meets quality standards"
+            : "Additional research required",
+        };
+        eventProcessed = true;
+      } else if (event.content_enhancement) {
+        const enhancementStatus = event.content_enhancement.enhancement_status || "unknown";
+        const statusMessages = {
+          "skipped": "Content enhancement skipped - quality sufficient",
+          "completed": "Content enhancement completed successfully", 
+          "failed": "Content enhancement failed",
+          "error": "Content enhancement encountered errors",
+          "analyzing": "Analyzing content enhancement needs",
+          "skipped_no_api": "Content enhancement skipped - no API key"
+        };
+        processedEvent = {
+          title: "Content Enhancement Analysis",
+          data: statusMessages[enhancementStatus] || `Status: ${enhancementStatus}`,
+        };
+        eventProcessed = true;
+      } else if (event.record_task_completion) {
+        const nextDecision = event.record_task_completion.next_node_decision || "continue";
+        const ledger = event.record_task_completion.ledger || [];
+        const completedTask = ledger.length > 0 ? ledger[0].description : "Unknown task";
+        processedEvent = {
+          title: "Task Completion Recorded",
+          data: nextDecision === "end" 
+            ? `All tasks completed. Final task: ${completedTask}`
+            : `Task completed: ${completedTask}. Moving to next task.`,
+        };
+        eventProcessed = true;
       } else if (event.finalize_answer) {
         processedEvent = {
           title: "Finalizing Answer",
           data: "Composing and presenting the final answer.",
         };
         hasFinalizeEventOccurredRef.current = true;
+        eventProcessed = true;
       }
+      
+      // 🐛 DEBUG: 检查是否有未处理的事件
+      if (!eventProcessed) {
+        console.warn("⚠️ 未处理的事件类型:", {
+          eventKeys: Object.keys(event),
+          eventData: event,
+          possibleMissingHandlers: [
+            "record_task_completion",
+            "content_enhancement", 
+            "should_enhance_content",
+            "decide_next_research_step",
+            "decide_next_step_in_plan"
+          ]
+        });
+      } else {
+        console.log("✅ 事件已处理:", processedEvent?.title);
+      }
+      
       if (processedEvent) {
         setProcessedEventsTimeline((prevEvents) => [
           ...prevEvents,

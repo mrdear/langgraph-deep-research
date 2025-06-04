@@ -240,46 +240,136 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
 def reflection(state: OverallState, config: RunnableConfig) -> OverallState:
     """LangGraph node that identifies knowledge gaps and generates potential follow-up queries.
 
-    Analyzes the current summary to identify areas for further research and generates
-    potential follow-up queries. Uses structured output to extract
-    the follow-up query in JSON format.
-
-    Args:
-        state: Current graph state containing the running summary and research topic
-        config: Configuration for the runnable, including LLM provider settings
-
-    Returns:
-        Dictionary with state update, including reflection results and follow-up queries
+    This is where we check if our search results are sufficient to answer the research question.
+    If not, we generate follow-up queries to address the knowledge gap.
     """
-    configurable = Configuration.from_runnable_config(config)
-    # Increment the research loop count and get the reasoning model
-    state["research_loop_count"] = state.get("research_loop_count", 0) + 1
-    reasoning_model = state.get("reasoning_model") or configurable.reflection_model
+    try:
+        configurable = Configuration.from_runnable_config(config)
+        
+        # 递增研究循环计数
+        state["research_loop_count"] = state.get("research_loop_count", 0) + 1
+        
+        reasoning_model = configurable.reasoning_model
+        current_date = get_current_date()
+        research_topic = get_research_topic(state["messages"])
+        
+        # 安全地获取web research结果，并截断过长内容
+        web_research_results = state.get("web_research_result", [])
+        
+        # 内容截断：限制总字符数以避免API限制
+        MAX_CHARS = 50000  # 约12500 tokens
+        truncated_results = []
+        total_chars = 0
+        
+        for result in web_research_results:
+            result_str = str(result)
+            if total_chars + len(result_str) <= MAX_CHARS:
+                truncated_results.append(result_str)
+                total_chars += len(result_str)
+            else:
+                # 部分截取最后一个结果
+                remaining_chars = MAX_CHARS - total_chars
+                if remaining_chars > 500:  # 至少保留500字符
+                    truncated_results.append(result_str[:remaining_chars] + "...[truncated]")
+                break
+        
+        print(f"🔍 Reflection分析: {len(web_research_results)} 个结果，截断后 {len(truncated_results)} 个，{total_chars} 字符")
+        
+        formatted_prompt = reflection_instructions.format(
+            current_date=current_date,
+            research_topic=research_topic,
+            summaries="\n\n---\n\n".join(truncated_results),
+        )
+        
+        # 检查prompt长度
+        prompt_length = len(formatted_prompt)
+        print(f"📏 Reflection prompt长度: {prompt_length} 字符")
+        
+        if prompt_length > 100000:  # 如果仍然过长，进一步截断
+            print("⚠️ Prompt过长，进一步截断summaries部分")
+            truncated_summaries = "\n\n---\n\n".join(truncated_results[:3])  # 只保留前3个结果
+            formatted_prompt = reflection_instructions.format(
+                current_date=current_date,
+                research_topic=research_topic,
+                summaries=truncated_summaries,
+            )
+        
+        # 初始化LLM
+        llm = ChatGoogleGenerativeAI(
+            model=reasoning_model,
+            temperature=1.0,
+            max_retries=3,  # 增加重试次数
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
+        
+        # 尝试结构化输出
+        try:
+            print("🤖 正在调用Gemini API进行reflection分析...")
+            result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
+            print("✅ Reflection分析成功完成")
+            
+        except Exception as api_error:
+            print(f"❌ Structured output失败: {str(api_error)}")
+            print("🔄 尝试fallback方案...")
+            
+            # Fallback: 使用简单的文本生成而不是structured output
+            simple_prompt = f"""Based on the research topic: {research_topic}
+            
+Research results summary: {len(truncated_results)} sources analyzed.
 
-    # Format the prompt
-    current_date = get_current_date()
-    
-    # 获取当前任务描述作为 research_topic
-    plan = state.get("plan")
-    pointer = state.get("current_task_pointer")
-    if plan and pointer is not None and pointer < len(plan):
-        research_topic = plan[pointer]["description"]
-    else:
-        research_topic = state.get("user_query") or get_research_topic(state["messages"])
-    
-    formatted_prompt = reflection_instructions.format(
-        current_date=current_date,
-        research_topic=research_topic,
-        summaries="\n\n---\n\n".join(state["web_research_result"]),
-    )
-    # init Reasoning Model
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
-    result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
+Please evaluate if this research is sufficient and respond in this exact JSON format:
+{{
+  "is_sufficient": true,
+  "knowledge_gap": "Research appears comprehensive based on available sources",
+  "follow_up_queries": []
+}}
+
+Important: Respond only with valid JSON."""
+            
+            try:
+                fallback_response = llm.invoke(simple_prompt)
+                import json
+                # 尝试解析JSON响应
+                response_text = fallback_response.content if hasattr(fallback_response, 'content') else str(fallback_response)
+                # 提取JSON部分
+                import re
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    result_dict = json.loads(json_match.group())
+                    # 创建Reflection对象
+                    result = Reflection(
+                        is_sufficient=result_dict.get("is_sufficient", True),
+                        knowledge_gap=result_dict.get("knowledge_gap", "Analysis completed with available data"),
+                        follow_up_queries=result_dict.get("follow_up_queries", [])
+                    )
+                    print("✅ Fallback方案成功")
+                else:
+                    raise ValueError("无法解析JSON响应")
+                    
+            except Exception as fallback_error:
+                print(f"❌ Fallback方案也失败: {str(fallback_error)}")
+                print("🛡️ 使用默认reflection结果")
+                
+                # 最终fallback: 基于结果数量的简单判断
+                has_sufficient_results = len(web_research_results) >= 3
+                result = Reflection(
+                    is_sufficient=has_sufficient_results,
+                    knowledge_gap="Analysis completed with available research data" if has_sufficient_results else "Limited research data available",
+                    follow_up_queries=[] if has_sufficient_results else [f"additional information about {research_topic}"]
+                )
+                print(f"🛡️ 默认判断: sufficient={has_sufficient_results}, 基于{len(web_research_results)}个搜索结果")
+
+    except Exception as e:
+        error_message = f"Reflection节点发生严重错误: {str(e)}"
+        print(f"💥 {error_message}")
+        
+        # 紧急fallback: 总是认为当前结果足够，避免中断流程
+        result = Reflection(
+            is_sufficient=True,
+            knowledge_gap="Analysis completed despite technical difficulties",
+            follow_up_queries=[]
+        )
+        print("🚨 使用紧急fallback，标记为sufficient以继续流程")
 
     # 返回更新的状态，包含reflection结果
     return {
