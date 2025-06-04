@@ -17,16 +17,30 @@ export const ResearchThinkPanel: React.FC<ResearchThinkPanelProps> = ({
   // 当研究数据变化时，自动展开当前任务和所有步骤
   React.useEffect(() => {
     if (researchData) {
-      // 自动展开当前任务
-      if (researchData.currentTaskId) {
-        setExpandedTasks(prev => new Set([...prev, researchData.currentTaskId!]));
+      console.log("🎯 Think Panel: 自动展开逻辑触发", {
+        currentTaskId: researchData.currentTaskId,
+        overallStatus: researchData.overallStatus,
+        tasksCount: researchData.tasks.length
+      });
+
+      // 自动展开当前任务和所有有步骤的任务
+      const tasksWithSteps = researchData.tasks.filter(t => t.steps.length > 0);
+      console.log("🎯 Think Panel: 有步骤的任务:", tasksWithSteps.map(t => ({ id: t.taskId, stepsCount: t.steps.length })));
+      
+      if (tasksWithSteps.length > 0) {
+        const taskIdsToExpand = tasksWithSteps.map(t => t.taskId);
+        setExpandedTasks(new Set(taskIdsToExpand));
         
-        // 自动展开当前任务的所有步骤
-        const currentTask = researchData.tasks.find(t => t.taskId === researchData.currentTaskId);
-        if (currentTask) {
-          const stepKeys = currentTask.steps.map((_, index) => `${currentTask.taskId}-${index}`);
-          setExpandedSteps(prev => new Set([...prev, ...stepKeys]));
-        }
+        // 自动展开这些任务的所有步骤
+        const stepKeysToExpand = tasksWithSteps.flatMap(task => 
+          task.steps.map((_, index) => `${task.taskId}-${index}`)
+        );
+        setExpandedSteps(new Set(stepKeysToExpand));
+        
+        console.log("🎯 Think Panel: 自动展开", {
+          expandedTasks: taskIdsToExpand,
+          expandedSteps: stepKeysToExpand.length
+        });
       }
       
       // 如果研究完成，展开所有任务和步骤以显示完整过程
@@ -38,6 +52,11 @@ export const ResearchThinkPanel: React.FC<ResearchThinkPanelProps> = ({
           task.steps.map((_, index) => `${task.taskId}-${index}`)
         );
         setExpandedSteps(new Set(allStepKeys));
+        
+        console.log("🎯 Think Panel: 研究完成，展开所有", {
+          allTasks: allTaskIds.length,
+          allSteps: allStepKeys.length
+        });
       }
     }
   }, [researchData?.currentTaskId, researchData?.overallStatus, researchData?.tasks?.length]);
@@ -227,6 +246,12 @@ const TaskCard: React.FC<TaskCardProps> = ({
   getStatusIcon,
   getStatusColor
 }) => {
+  console.log(`📋 TaskCard渲染: ${task.taskId}`, {
+    stepsCount: task.steps.length,
+    isExpanded,
+    steps: task.steps.map(s => ({ type: s.type, title: s.title, hasDetails: !!(s.details && s.details.length > 0) }))
+  });
+
   return (
     <div className="bg-neutral-800 rounded-lg border border-neutral-700">
       {/* Task Header */}
