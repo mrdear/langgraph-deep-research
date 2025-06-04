@@ -1,10 +1,10 @@
 import type React from "react";
 import type { Message } from "@langchain/langgraph-sdk";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Copy, CopyCheck } from "lucide-react";
+import { Loader2, Copy, CopyCheck, Eye, EyeOff } from "lucide-react";
 import { InputForm } from "@/components/InputForm";
 import { Button } from "@/components/ui/button";
-import { useState, ReactNode } from "react";
+import { useState, ReactNode, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -12,12 +12,14 @@ import {
   ActivityTimeline,
   ProcessedEvent,
 } from "@/components/ActivityTimeline"; // Assuming ActivityTimeline is in the same dir or adjust path
+import { ResearchThinkPanel } from "@/components/ResearchThinkPanel";
+import { transformEventsToHierarchy, EventData } from "@/utils/dataTransformer";
 
 // Markdown component props type from former ReportView
 type MdComponentProps = {
   className?: string;
   children?: ReactNode;
-  [key: string]: any;
+  [key: string]: any; // 保留any类型以兼容ReactMarkdown
 };
 
 // Markdown components (from former ReportView.tsx)
@@ -168,6 +170,7 @@ interface AiMessageBubbleProps {
   mdComponents: typeof mdComponents;
   handleCopy: (text: string, messageId: string) => void;
   copiedMessageId: string | null;
+  showCompactTimeline: boolean;
 }
 
 // AiMessageBubble Component
@@ -180,15 +183,40 @@ const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
   mdComponents,
   handleCopy,
   copiedMessageId,
+  showCompactTimeline,
 }) => {
-  // Determine which activity events to show and if it's for a live loading message
-  const activityForThisBubble =
-    isLastMessage && isOverallLoading ? liveActivity : historicalActivity;
-  const isLiveActivityForThisBubble = isLastMessage && isOverallLoading;
+  // 🔧 IMPROVED: 改进活动显示逻辑 - 优先显示快照
+  // 1. 如果有历史活动快照，优先显示快照（避免闪现）
+  // 2. 只有最后一条消息且没有快照时，才显示实时活动
+  const hasHistoricalActivity = historicalActivity && historicalActivity.length > 0;
+  const shouldShowLiveActivity = isLastMessage && isOverallLoading && !hasHistoricalActivity;
+  
+  const activityForThisBubble = hasHistoricalActivity 
+    ? historicalActivity 
+    : (shouldShowLiveActivity ? liveActivity : []);
+  const isLiveActivityForThisBubble = shouldShowLiveActivity;
+
+  // 🔧 DEBUG: 简化调试信息
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`🎯 AiMessageBubble [${message.id?.slice(-8)}]:`, {
+      isLastMessage,
+      hasHistoricalActivity,
+      shouldShowLiveActivity,
+      activityCount: activityForThisBubble?.length || 0,
+      showingType: hasHistoricalActivity ? 'snapshot' : (shouldShowLiveActivity ? 'live' : 'none')
+    });
+  }
 
   return (
     <div className={`relative break-words flex flex-col`}>
-      {activityForThisBubble && activityForThisBubble.length > 0 && (
+      {/* 🔧 DEBUG: 添加状态显示信息 */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="text-xs bg-blue-900 p-1 mb-2 rounded text-white">
+          Message: {message.id} | Historical: {historicalActivity?.length || 0} | Live: {liveActivity?.length || 0} | Showing: {activityForThisBubble?.length || 0}
+        </div>
+      )}
+      {/* 只在没有思考面板时显示活动时间线 */}
+      {!showCompactTimeline && activityForThisBubble && activityForThisBubble.length > 0 && (
         <div className="mb-3 border-b border-neutral-700 pb-3 text-xs">
           <ActivityTimeline
             processedEvents={activityForThisBubble}
@@ -240,6 +268,7 @@ export function ChatMessagesView({
   historicalActivities,
 }: ChatMessagesViewProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [showThinkPanel, setShowThinkPanel] = useState(true);
 
   const handleCopy = async (text: string, messageId: string) => {
     try {
@@ -251,71 +280,148 @@ export function ChatMessagesView({
     }
   };
 
+  // 获取转换后的研究数据
+  const researchData = useMemo(() => {
+    try {
+      // 从sessionStorage获取事件数据
+      const storedEvents = JSON.parse(sessionStorage.getItem('research_events') || '[]') as EventData[];
+      if (storedEvents.length === 0) {
+        console.log("🔍 Think Panel: 没有存储的事件数据");
+        return null;
+      }
+      
+      console.log(`🔍 Think Panel: 处理 ${storedEvents.length} 个事件`);
+      const result = transformEventsToHierarchy(storedEvents, messages || []);
+      console.log("🔍 Think Panel: 转换结果", {
+        tasksCount: result.tasks.length,
+        overallStatus: result.overallStatus,
+        currentTaskId: result.currentTaskId,
+        tasks: result.tasks.map(t => ({
+          id: t.taskId,
+          description: t.description,
+          stepsCount: t.steps.length,
+          steps: t.steps.map(s => ({ type: s.type, title: s.title, status: s.status }))
+        }))
+      });
+      
+      return result;
+    } catch (error) {
+      console.warn("⚠️ Think Panel: 无法获取研究数据:", error);
+      return null;
+    }
+  }, [messages, liveActivityEvents, isLoading]); // 添加isLoading依赖确保实时更新
+
   return (
-    <div className="flex flex-col h-full">
-      <ScrollArea className="flex-grow" ref={scrollAreaRef}>
-        <div className="p-4 md:p-6 space-y-2 max-w-4xl mx-auto pt-16">
-          {messages.map((message, index) => {
-            const isLast = index === messages.length - 1;
-            return (
-              <div key={message.id || `msg-${index}`} className="space-y-3">
-                <div
-                  className={`flex items-start gap-3 ${
-                    message.type === "human" ? "justify-end" : ""
-                  }`}
-                >
-                  {message.type === "human" ? (
-                    <HumanMessageBubble
-                      message={message}
-                      mdComponents={mdComponents}
-                    />
-                  ) : (
-                    <AiMessageBubble
-                      message={message}
-                      historicalActivity={historicalActivities[message.id!]}
-                      liveActivity={liveActivityEvents} // Pass global live events
-                      isLastMessage={isLast}
-                      isOverallLoading={isLoading} // Pass global loading state
-                      mdComponents={mdComponents}
-                      handleCopy={handleCopy}
-                      copiedMessageId={copiedMessageId}
-                    />
-                  )}
+    <div className="flex h-full">
+      {/* 左侧消息区域 */}
+      <div className={`flex flex-col transition-all duration-300 ${showThinkPanel ? 'w-1/2' : 'w-full'}`}>
+        {/* 切换按钮 */}
+        <div className="flex justify-between items-center p-4 border-b border-neutral-800 flex-shrink-0">
+          <h3 className="text-lg font-medium text-white">Conversation</h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowThinkPanel(!showThinkPanel)}
+            className="text-neutral-400 border-neutral-600 hover:bg-neutral-700"
+          >
+            {showThinkPanel ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+            {showThinkPanel ? 'Hide Think Panel' : 'Show Think Panel'}
+          </Button>
+        </div>
+
+        <ScrollArea className="flex-grow h-0" ref={scrollAreaRef}>
+          <div className="p-4 md:p-6 space-y-2 min-h-full">
+            {messages.map((message, index) => {
+              const isLast = index === messages.length - 1;
+              return (
+                <div key={message.id || `msg-${index}`} className="space-y-3">
+                  <div
+                    className={`flex items-start gap-3 ${
+                      message.type === "human" ? "justify-end" : ""
+                    }`}
+                  >
+                    {message.type === "human" ? (
+                      <HumanMessageBubble
+                        message={message}
+                        mdComponents={mdComponents}
+                      />
+                    ) : (
+                      <AiMessageBubble
+                        message={message}
+                        historicalActivity={historicalActivities[message.id!]}
+                        liveActivity={liveActivityEvents}
+                        isLastMessage={isLast}
+                        isOverallLoading={isLoading}
+                        mdComponents={mdComponents}
+                        handleCopy={handleCopy}
+                        copiedMessageId={copiedMessageId}
+                        showCompactTimeline={showThinkPanel}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {/* 🔧 FIXED: 改进loading状态显示 - 只在真正需要时显示 */}
+            {isLoading && messages.length === 0 && (
+              <div className="flex items-start gap-3 mt-3">
+                <div className="relative group max-w-[85%] md:max-w-[80%] rounded-xl p-3 shadow-sm break-words bg-neutral-800 text-neutral-100 rounded-bl-none w-full min-h-[56px]">
+                  <div className="flex items-center justify-start h-full">
+                    <Loader2 className="h-5 w-5 animate-spin text-neutral-400 mr-2" />
+                    <span>Initializing research...</span>
+                  </div>
                 </div>
               </div>
-            );
-          })}
-          {isLoading &&
-            (messages.length === 0 ||
-              messages[messages.length - 1].type === "human") && (
+            )}
+            {/* 🔧 NEW: 当最后一条是human消息且正在loading时，显示处理状态 */}
+            {isLoading && messages.length > 0 && messages[messages.length - 1].type === "human" && (
               <div className="flex items-start gap-3 mt-3">
-                {" "}
-                {/* AI message row structure */}
                 <div className="relative group max-w-[85%] md:max-w-[80%] rounded-xl p-3 shadow-sm break-words bg-neutral-800 text-neutral-100 rounded-bl-none w-full min-h-[56px]">
-                  {liveActivityEvents.length > 0 ? (
-                    <div className="text-xs">
-                      <ActivityTimeline
-                        processedEvents={liveActivityEvents}
-                        isLoading={true}
-                      />
-                    </div>
-                  ) : (
+                  {showThinkPanel ? (
                     <div className="flex items-center justify-start h-full">
                       <Loader2 className="h-5 w-5 animate-spin text-neutral-400 mr-2" />
-                      <span>Processing...</span>
+                      <span>Processing... (Detailed information can be found in the right think panel)</span>
                     </div>
+                  ) : (
+                    liveActivityEvents.length > 0 ? (
+                      <div className="text-xs">
+                        <ActivityTimeline
+                          processedEvents={liveActivityEvents}
+                          isLoading={true}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-start h-full">
+                        <Loader2 className="h-5 w-5 animate-spin text-neutral-400 mr-2" />
+                        <span>Processing...</span>
+                      </div>
+                    )
                   )}
                 </div>
               </div>
             )}
+          </div>
+        </ScrollArea>
+        
+        <div className="flex-shrink-0">
+          <InputForm
+            onSubmit={onSubmit}
+            isLoading={isLoading}
+            onCancel={onCancel}
+            hasHistory={messages.length > 0}
+          />
         </div>
-      </ScrollArea>
-      <InputForm
-        onSubmit={onSubmit}
-        isLoading={isLoading}
-        onCancel={onCancel}
-        hasHistory={messages.length > 0}
-      />
+      </div>
+
+      {/* 右侧思考面板 - 固定高度，独立滚动 */}
+      {showThinkPanel && (
+        <div className="w-1/2 border-l border-neutral-800 flex flex-col h-full">
+          <ResearchThinkPanel 
+            researchData={researchData}
+            isLoading={isLoading}
+          />
+        </div>
+      )}
     </div>
   );
 }
