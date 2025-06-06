@@ -1,3 +1,60 @@
+# 🚀 Enhanced Version
+
+> Based on the original project, I have optimized the Agent workflow and frontend display effects.
+
+## **Agent Workflow Comparison**
+<table>
+<tr>
+<td align="center"><b>Optimized Agent</b></td>
+<td align="center"><b>Original Agent</b></td>
+</tr>
+<tr>
+<td><img src="./agent_new.png" width="400"/></td>
+<td><img src="./agent.png" width="400"/></td>
+</tr>
+</table>
+
+## **Frontend Display Enhancement** 
+<table>
+<tr>
+<td align="center"><b>Enhanced Frontend</b></td>
+<td align="center"><b>Original Frontend</b></td>
+</tr>
+<tr>
+<td><img src="./frontend.png" width="400"/></td>
+<td><img src="./app.png" width="400"/></td>
+</tr>
+</table>
+
+## **Technical Documentation**
+For detailed technical implementation and architecture analysis, please refer to:
+- 📖 [`docs/document-generation-flow.md`](docs/document-generation-flow.md) - English Technical Documentation
+- 📖 [`docs/document-generation-flow-ZH.md`](docs/document-generation-flow-ZH.md) - Chinese Technical Documentation
+
+## **📞 Contact & Support**
+
+**Author: Peng.G**
+
+If you have any questions about this project or Agent development, or are interested in business collaboration opportunities, feel free to reach out:
+
+<div align="center">
+
+| Platform | Contact Information |
+|----------|-------------------|
+| **𝕏 (Twitter)** | [@Stephen4171127](https://x.com/Stephen4171127) |
+| **📝 Blog** | [https://me.deeptoai.com](https://me.deeptoai.com) |
+| **💬 WeChat** | `browncony999` |
+| **📧 Email** | [foreveryh@gmail.com](mailto:foreveryh@gmail.com) |
+
+</div>
+
+---
+
+## **Getting Started**
+The setup process remains the same. Please follow the original project's official guidance below.
+
+---
+
 # Gemini Fullstack LangGraph Quickstart
 
 This project demonstrates a fullstack application using a React frontend and a LangGraph-powered backend agent. The agent is designed to perform comprehensive research on a user's query by dynamically generating search terms, querying the web using Google Search, reflecting on the results to identify knowledge gaps, and iteratively refining its search until it can provide a well-supported answer with citations. This application serves as an example of building research-augmented conversational AI using LangGraph and Google's Gemini models.
