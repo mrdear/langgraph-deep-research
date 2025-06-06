@@ -1,5 +1,11 @@
 # 文档生成流程：从查询到综合研究报告
 
+## 增强的Agent工作流
+
+![增强的Agent工作流](../agent_new.png)
+
+*增强的agent工作流包含智能内容增强和双层评估系统，确保研究质量的全面性。*
+
 ## 目录
 
 1. [概述](#概述)
@@ -441,7 +447,112 @@ task_specific_result = {
 这种结构使得：
 - **任务关联**：结果清楚地链接到其发起的研究任务
 - **时间跟踪**：时间戳支持发现的时间组织
-- **源保持**：每个结果的引用信息得到维护 
+- **源保持**：每个结果的引用信息得到维护
+
+### 4. 内容增强节点
+
+内容增强节点代表研究管道中的关键创新，实现针对性深度内容抓取的智能决策制定，集成Firecrawl功能。
+
+#### 智能增强决策
+
+内容增强过程采用复杂分析来确定何时需要额外的深度：
+
+```python
+def content_enhancement_analysis(state: OverallState, config: RunnableConfig) -> dict:
+    # 分析当前研究上下文
+    plan = state.get("plan", [])
+    current_pointer = state.get("current_task_pointer", 0)
+    
+    # 确定研究主题
+    if plan and current_pointer < len(plan):
+        research_topic = plan[current_pointer]["description"]
+    else:
+        research_topic = state.get("user_query") or get_research_topic(state["messages"])
+    
+    # 获取当前发现和来源
+    current_findings = state.get("web_research_result", [])
+    grounding_sources = extract_grounding_sources(state)
+    
+    # 使用智能决策器
+    decision = get_content_enhancement_decision_maker().analyze_enhancement_need(
+        research_topic=research_topic,
+        current_findings=current_findings,
+        grounding_sources=grounding_sources,
+        config=config
+    )
+```
+
+#### 增强决策标准
+
+系统评估多个因素来确定增强需求：
+
+1. **内容深度分析**：评估当前发现是否提供足够的细节
+2. **源质量评估**：确定是否有更高质量的源可用
+3. **信息差距检测**：识别需要深入调查的特定领域
+4. **资源效率**：平衡增强效益与计算成本
+
+#### Firecrawl集成策略
+
+当认为需要增强时，系统：
+
+1. **优先排序URL**：选择最有前景的深度抓取来源
+2. **执行目标抓取**：使用Firecrawl进行全面内容提取
+3. **质量评估**：评估增强内容的有效性
+4. **内容集成**：将增强发现与现有研究合并
+
+#### 增强类型
+
+系统支持多种增强类别：
+
+- **技术深度探索**：详细的技术规范和实施细节
+- **市场情报**：当前市场数据和竞争分析
+- **案例研究**：真实世界的实施示例和结果
+- **监管信息**：政策、标准和合规要求
+
+### 5. 增强研究评估节点
+
+增强研究评估节点代表传统反思过程的演进，将内容增强结果纳入研究充分性评估。
+
+#### 智能评估集成
+
+评估过程考虑传统内容分析之外的多个因素：
+
+```python
+def evaluate_research_enhanced(state: OverallState, config: RunnableConfig) -> dict:
+    # 获取反思结果
+    reflection_is_sufficient = state.get("reflection_is_sufficient", False)
+    
+    # 检查增强状态和有效性
+    enhancement_status = state.get("enhancement_status")
+    enhanced_sources_count = state.get("enhanced_sources_count", 0)
+    
+    # 结合反思和增强结果的智能决策
+    is_sufficient = reflection_is_sufficient
+    
+    # 增强效果评估
+    if not is_sufficient and enhancement_status == "completed" and enhanced_sources_count > 0:
+        enhancement_boost = min(enhanced_sources_count * 0.3, 0.8)
+        if enhancement_boost >= 0.6:
+            is_sufficient = True
+```
+
+#### 多维度评估
+
+增强评估考虑：
+
+1. **传统反思结果**：基于LLM的完整性评估
+2. **增强有效性**：内容增强的成功和影响
+3. **源多样性**：利用的信息来源广度
+4. **内容深度**：研究目标的全面覆盖
+5. **质量指标**：整体研究质量指标
+
+#### 动态决策制定
+
+评估节点实施复杂的路由逻辑：
+
+- **继续研究**：尽管增强但仍有重大差距时
+- **完成任务**：研究目标得到充分解决时
+- **自适应阈值**：基于增强成功的动态调整
 
 ## 报告级别内容增强
 

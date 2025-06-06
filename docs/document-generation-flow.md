@@ -1,5 +1,11 @@
 # Document Generation Flow: From Query to Comprehensive Research Report
 
+## Enhanced Agent Workflow
+
+![Enhanced Agent Workflow](../agent_new.png)
+
+*The enhanced agent workflow includes intelligent content enhancement and dual-layer evaluation systems for comprehensive research quality.*
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -556,7 +562,112 @@ The reflection system implements several quality controls:
 4. **Objective Alignment**: Ensures new queries remain aligned with original research goals
 5. **Task Continuity**: Maintains task association throughout the reflection cycle
 
-### 5. Task Completion Node
+### 5. Content Enhancement Node
+
+The content enhancement node represents a critical innovation in the research pipeline, implementing intelligent decision-making for targeted deep content scraping using Firecrawl integration.
+
+#### Smart Enhancement Decision Making
+
+The content enhancement process employs sophisticated analysis to determine when additional depth is needed:
+
+```python
+def content_enhancement_analysis(state: OverallState, config: RunnableConfig) -> dict:
+    # Analyze current research context
+    plan = state.get("plan", [])
+    current_pointer = state.get("current_task_pointer", 0)
+    
+    # Determine research topic
+    if plan and current_pointer < len(plan):
+        research_topic = plan[current_pointer]["description"]
+    else:
+        research_topic = state.get("user_query") or get_research_topic(state["messages"])
+    
+    # Get current findings and sources
+    current_findings = state.get("web_research_result", [])
+    grounding_sources = extract_grounding_sources(state)
+    
+    # Use intelligent decision maker
+    decision = get_content_enhancement_decision_maker().analyze_enhancement_need(
+        research_topic=research_topic,
+        current_findings=current_findings,
+        grounding_sources=grounding_sources,
+        config=config
+    )
+```
+
+#### Enhancement Decision Criteria
+
+The system evaluates several factors to determine enhancement needs:
+
+1. **Content Depth Analysis**: Assessing whether current findings provide sufficient detail
+2. **Source Quality Evaluation**: Determining if higher-quality sources are available
+3. **Information Gap Detection**: Identifying specific areas requiring deeper investigation
+4. **Resource Efficiency**: Balancing enhancement benefits against computational costs
+
+#### Firecrawl Integration Strategy
+
+When enhancement is deemed necessary, the system:
+
+1. **Prioritizes URLs**: Selects the most promising sources for deep scraping
+2. **Executes Targeted Scraping**: Uses Firecrawl for comprehensive content extraction
+3. **Quality Assessment**: Evaluates the effectiveness of enhanced content
+4. **Content Integration**: Merges enhanced findings with existing research
+
+#### Enhancement Types
+
+The system supports multiple enhancement categories:
+
+- **Technical Deep Dives**: Detailed technical specifications and implementation details
+- **Market Intelligence**: Current market data and competitive analysis
+- **Case Studies**: Real-world implementation examples and outcomes
+- **Regulatory Information**: Policies, standards, and compliance requirements
+
+### 6. Enhanced Research Evaluation Node
+
+The enhanced research evaluation node represents an evolution of the traditional reflection process, incorporating content enhancement results into research sufficiency assessment.
+
+#### Intelligent Evaluation Integration
+
+The evaluation process considers multiple factors beyond traditional content analysis:
+
+```python
+def evaluate_research_enhanced(state: OverallState, config: RunnableConfig) -> dict:
+    # Get reflection results
+    reflection_is_sufficient = state.get("reflection_is_sufficient", False)
+    
+    # Check enhancement status and effectiveness
+    enhancement_status = state.get("enhancement_status")
+    enhanced_sources_count = state.get("enhanced_sources_count", 0)
+    
+    # Intelligent decision combining reflection and enhancement results
+    is_sufficient = reflection_is_sufficient
+    
+    # Enhancement boost evaluation
+    if not is_sufficient and enhancement_status == "completed" and enhanced_sources_count > 0:
+        enhancement_boost = min(enhanced_sources_count * 0.3, 0.8)
+        if enhancement_boost >= 0.6:
+            is_sufficient = True
+```
+
+#### Multi-Dimensional Assessment
+
+The enhanced evaluation considers:
+
+1. **Traditional Reflection Results**: LLM-based completeness assessment
+2. **Enhancement Effectiveness**: Success and impact of content enhancement
+3. **Source Diversity**: Breadth of information sources utilized
+4. **Content Depth**: Comprehensive coverage of research objectives
+5. **Quality Metrics**: Overall research quality indicators
+
+#### Dynamic Decision Making
+
+The evaluation node implements sophisticated routing logic:
+
+- **Continue Research**: When significant gaps remain despite enhancement
+- **Complete Task**: When research objectives are sufficiently addressed
+- **Adaptive Thresholds**: Dynamic adjustment based on enhancement success
+
+### 7. Task Completion Node
 
 The task completion node manages the transition between individual research tasks and maintains a comprehensive ledger of findings with enhanced data association capabilities.
 
@@ -689,9 +800,9 @@ Recent enhancements ensure:
 - **Citation Preservation**: Source information is maintained through task completion
 - **State Continuity**: Task context is properly managed across task transitions
 
-### 6. Report-Level Enhancer
+### 8. Report-Level Enhancer
 
-The report-level enhancer performs targeted deep enhancement for identified information gaps.
+The report-level enhancer performs targeted deep enhancement for identified information gaps during final report synthesis.
 
 #### Enhanced State Management
 
@@ -756,7 +867,7 @@ This ensures:
 - **Logical Structure**: Information flows logically from general to specific
 - **Context Preservation**: Task-specific findings are integrated seamlessly
 
-### 7. Document Synthesizer
+### 9. Document Synthesizer
 
 The document synthesis node represents the culmination of the research process, transforming accumulated findings into comprehensive, well-structured reports.
 
