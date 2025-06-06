@@ -27,6 +27,7 @@ from agent.prompts import (
     reflection_instructions,
     answer_instructions,
     planning_instructions,
+    integrated_report_instructions,
 )
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agent.utils import (
@@ -35,7 +36,7 @@ from agent.utils import (
     insert_citation_markers,
     resolve_urls,
 )
-# 导入智能内容增强模块
+# Import intelligent content enhancement modules
 from agent.enhanced_graph_nodes import (
     content_enhancement_analysis,
     should_enhance_content
@@ -246,18 +247,18 @@ def reflection(state: OverallState, config: RunnableConfig) -> OverallState:
     try:
         configurable = Configuration.from_runnable_config(config)
         
-        # 递增研究循环计数
+        # Increment research loop counter
         state["research_loop_count"] = state.get("research_loop_count", 0) + 1
         
         reasoning_model = configurable.reasoning_model
         current_date = get_current_date()
         research_topic = get_research_topic(state["messages"])
         
-        # 安全地获取web research结果，并截断过长内容
+        # Safely retrieve web research results and truncate overly long content
         web_research_results = state.get("web_research_result", [])
         
-        # 内容截断：限制总字符数以避免API限制
-        MAX_CHARS = 50000  # 约12500 tokens
+        # Content truncation: limit total characters to avoid API limits
+        MAX_CHARS = 50000  # Approximately 12500 tokens
         truncated_results = []
         total_chars = 0
         
@@ -267,13 +268,13 @@ def reflection(state: OverallState, config: RunnableConfig) -> OverallState:
                 truncated_results.append(result_str)
                 total_chars += len(result_str)
             else:
-                # 部分截取最后一个结果
+                # Partially truncate the last result
                 remaining_chars = MAX_CHARS - total_chars
-                if remaining_chars > 500:  # 至少保留500字符
+                if remaining_chars > 500:  # Keep at least 500 characters
                     truncated_results.append(result_str[:remaining_chars] + "...[truncated]")
                 break
         
-        print(f"🔍 Reflection分析: {len(web_research_results)} 个结果，截断后 {len(truncated_results)} 个，{total_chars} 字符")
+        print(f"🔍 Reflection analysis: {len(web_research_results)} results, {len(truncated_results)} after truncation, {total_chars} characters")
         
         formatted_prompt = reflection_instructions.format(
             current_date=current_date,
@@ -281,38 +282,38 @@ def reflection(state: OverallState, config: RunnableConfig) -> OverallState:
             summaries="\n\n---\n\n".join(truncated_results),
         )
         
-        # 检查prompt长度
+        # Check prompt length
         prompt_length = len(formatted_prompt)
-        print(f"📏 Reflection prompt长度: {prompt_length} 字符")
+        print(f"📏 Reflection prompt length: {prompt_length} characters")
         
-        if prompt_length > 100000:  # 如果仍然过长，进一步截断
-            print("⚠️ Prompt过长，进一步截断summaries部分")
-            truncated_summaries = "\n\n---\n\n".join(truncated_results[:3])  # 只保留前3个结果
+        if prompt_length > 100000:  # If still too long, further truncate
+            print("⚠️ Prompt too long, further truncating summaries section")
+            truncated_summaries = "\n\n---\n\n".join(truncated_results[:3])  # Keep only first 3 results
             formatted_prompt = reflection_instructions.format(
                 current_date=current_date,
                 research_topic=research_topic,
                 summaries=truncated_summaries,
             )
         
-        # 初始化LLM
+        # Initialize LLM
         llm = ChatGoogleGenerativeAI(
             model=reasoning_model,
             temperature=1.0,
-            max_retries=3,  # 增加重试次数
+            max_retries=3,  # Increase retry count
             api_key=os.getenv("GEMINI_API_KEY"),
         )
         
-        # 尝试结构化输出
+        # Try structured output
         try:
-            print("🤖 正在调用Gemini API进行reflection分析...")
+            print("🤖 Calling Gemini API for reflection analysis...")
             result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
-            print("✅ Reflection分析成功完成")
+            print("✅ Reflection analysis completed successfully")
             
         except Exception as api_error:
-            print(f"❌ Structured output失败: {str(api_error)}")
-            print("🔄 尝试fallback方案...")
+            print(f"❌ Structured output failed: {str(api_error)}")
+            print("🔄 Trying fallback approach...")
             
-            # Fallback: 使用简单的文本生成而不是structured output
+            # Fallback: use simple text generation instead of structured output
             simple_prompt = f"""Based on the research topic: {research_topic}
             
 Research results summary: {len(truncated_results)} sources analyzed.
@@ -360,18 +361,18 @@ Important: Respond only with valid JSON."""
                 print(f"🛡️ 默认判断: sufficient={has_sufficient_results}, 基于{len(web_research_results)}个搜索结果")
 
     except Exception as e:
-        error_message = f"Reflection节点发生严重错误: {str(e)}"
+        error_message = f"Reflection node encountered critical error: {str(e)}"
         print(f"💥 {error_message}")
         
-        # 紧急fallback: 总是认为当前结果足够，避免中断流程
+        # Emergency fallback: always consider current results sufficient to avoid flow interruption
         result = Reflection(
             is_sufficient=True,
             knowledge_gap="Analysis completed despite technical difficulties",
             follow_up_queries=[]
         )
-        print("🚨 使用紧急fallback，标记为sufficient以继续流程")
+        print("🚨 Using emergency fallback, marking as sufficient to continue flow")
 
-    # 返回更新的状态，包含reflection结果
+    # Return updated state with reflection results
     return {
         "research_loop_count": state["research_loop_count"],
         "reflection_is_sufficient": result.is_sufficient,  # 新增字段保存reflection结果
@@ -486,7 +487,29 @@ def decide_next_research_step(state: OverallState):
 
 
 def finalize_answer(state: OverallState, config: RunnableConfig) -> dict:
-    """Generate the final research report by synthesizing all task findings, using batch generation for detailed content."""
+    """
+    Generate the final research report using holistic integration of all research findings.
+    
+    OPTIMIZATION STRATEGY:
+    This function implements a comprehensive refactor from the previous task-segmented approach
+    to a unified holistic integration strategy. Instead of concatenating individual task sections,
+    it synthesizes all research data through a single LLM call for coherent narrative flow.
+    
+    KEY IMPROVEMENTS:
+    1. Cross-task data aggregation: Combines findings from all research streams
+    2. Thematic organization: Structures content by analytical themes, not task boundaries  
+    3. Executive-grade synthesis: Generates consulting-quality integrated reports
+    4. Narrative coherence: Maintains unified strategic perspective throughout
+    
+    INPUT SOURCES:
+    - Task-specific research results from ledger
+    - Detailed research content from task_specific_results
+    - Source attribution from sources_gathered
+    - Original user query and research plan context
+    
+    OUTPUT:
+    Unified professional research report with integrated analysis across all investigation areas.
+    """
     try:
         configurable = Configuration.from_runnable_config(config)
         llm = ChatGoogleGenerativeAI(
@@ -497,216 +520,141 @@ def finalize_answer(state: OverallState, config: RunnableConfig) -> dict:
         )
         
         plan = state.get("plan", [])
+        user_query = state.get("user_query", "Research Analysis")
+        
         if not plan:
             return {
                 "messages": [AIMessage(content="No research plan available to generate report")],
                 "final_report_markdown": "No research plan available to generate report"
             }
         
-        # Build ledger map and task results map
+        # Build comprehensive research dataset from all sources
         ledger = state.get("ledger", [])
-        ledger_map = {entry["task_id"]: entry for entry in ledger}
-        
         task_specific_results = state.get("task_specific_results", [])
-        task_results_map = {}
+        sources_gathered = state.get("sources_gathered", [])
+        
+        # Create research plan summary for context
+        research_plan_summary = "\n".join([
+            f"• {task['description']}" for task in plan
+        ])
+        
+        # Aggregate all research findings with proper attribution
+        comprehensive_research_data = []
+        
+        # Add comprehensive findings from ledger with all available detail
+        for entry in ledger:
+            detailed_snippets = entry.get('detailed_snippets', [])
+            citations = entry.get('citations_for_snippets', [])
+            
+            # Build comprehensive task context with all available information
+            task_context = f"""
+RESEARCH FOCUS: {entry['description']}
+KEY FINDINGS: {entry['findings_summary']}
+
+DETAILED RESEARCH CONTENT:
+{chr(10).join(detailed_snippets)}
+
+SUPPORTING CITATIONS:
+{chr(10).join([f"- {cite.get('snippet', '')[:200]}... [Source: {cite.get('source', 'Unknown')}]" for cite in citations[:5]])}
+"""
+            comprehensive_research_data.append(task_context)
+        
+        # Add task-specific detailed results with enhanced context
         for result in task_specific_results:
-            task_id = result.get("task_id")
-            if task_id:
-                if task_id not in task_results_map:
-                    task_results_map[task_id] = []
-                task_results_map[task_id].append(result)
+            sources_info = ""
+            if result.get('sources'):
+                sources_list = [f"- {source.get('title', 'Unknown')} ({source.get('url', 'N/A')})" 
+                              for source in result.get('sources', [])[:3]]
+                sources_info = f"\nSOURCES:\n{chr(10).join(sources_list)}"
+            
+            task_detail = f"""
+RESEARCH STREAM: {result.get('task_id', 'Unknown')}
+CONTENT: {result.get('content', '')}
+TIMESTAMP: {result.get('timestamp', '')}{sources_info}
+"""
+            comprehensive_research_data.append(task_detail)
         
         # Build source mapping for citation conversion
-        sources_gathered = state.get("sources_gathered", [])
         source_mapping = build_source_mapping(sources_gathered)
         
-        report_sections = []
+        # Combine all research data
+        research_dataset = "\n" + "="*80 + "\n".join(comprehensive_research_data)
         
-        # Introduction
-        intro_prompt = f"""As a Senior Research Analyst at a leading global consultancy, write a professional Executive Summary for this research report.
-
-Research Topic: {state.get('user_query', 'Research Topic')}
-
-EXECUTIVE SUMMARY REQUIREMENTS:
-- **Strategic Context**: Establish the business importance and relevance of this research
-- **Key Market Dynamics**: Highlight the most critical trends and drivers shaping this space
-- **Core Insights**: Summarize the 3-4 most significant findings that executives need to know
-- **Strategic Implications**: What this means for business leaders, investors, and policymakers
-- **Market Opportunity**: Size the opportunity and highlight key growth drivers
-
-WRITING STYLE:
-- Executive-level language: professional, authoritative, accessible
-- Lead with business impact and strategic significance
-- Include specific data points that demonstrate market scale and momentum
-- Focus on actionable insights rather than academic abstractions
-- 3-4 well-structured paragraphs
-
-EXAMPLE OPENING: "The global [market/sector] is experiencing unprecedented transformation, driven by [key factors]. With market valuations reaching $X billion and projected growth of Y%, this represents a critical inflection point for [stakeholder groups]..."
-
-IMPORTANT: Write only the Executive Summary content. No meta-commentary, no section headers."""
-
-        try:
-            introduction = llm.invoke(intro_prompt).content
-            introduction = clean_generated_content(introduction)
-            report_sections.append(f"# {state.get('user_query', 'Research Report')}\n\n## Executive Summary\n\n{introduction}\n")
-        except Exception as e:
-            report_sections.append(f"# {state.get('user_query', 'Research Report')}\n\n## Executive Summary\n\n*Executive Summary generation encountered technical issues. Report continues with detailed analysis.*\n")
-
-        # Generate sections for each task
-        for task in plan:
-            task_id = task["id"]
-            task_description = task["description"]
-            ledger_entry = ledger_map.get(task_id)
-            if not ledger_entry:
-                report_sections.append(f"## {task_description}\n\n*Analysis pending - comprehensive data collection in progress.*\n")
-                continue
-            
-            # Get task-specific results first, then fall back to web_research_result if empty
-            task_results = task_results_map.get(task_id, [])
-            detailed_contents = [result["content"] for result in task_results]
-            
-            # Fallback: if no task-specific results, use all web_research_result as content
-            if not detailed_contents:
-                web_research_result = state.get("web_research_result", [])
-                detailed_contents = web_research_result
-                print(f"Warning: No task-specific results for {task_id}, using fallback web_research_result with {len(detailed_contents)} items")
-            
-            if not detailed_contents:
-                # If still no content, create a section with just the summary
-                section_content = ledger_entry['findings_summary']
-                report_sections.append(f"## {task_description}\n\n{section_content}\n")
-                continue
-            
-            batches = split_by_tokens(detailed_contents, max_tokens=150000)  # Increased token limit
-            section_content = ""
-            previous_content = ""
-            
-            for i, batch in enumerate(batches):
-                is_last = (i == len(batches) - 1)
-                batched_content = "\n\n".join(batch)
-                
-                # Convert citations to readable format
-                batched_content = convert_citations_to_readable(batched_content, source_mapping)
-                
-                section_prompt = f"""As a Senior Research Analyst at a leading global consultancy, synthesize these research findings into a professional analysis section.
-
-SECTION FOCUS: {task_description}
-STRATEGIC CONTEXT: {ledger_entry['findings_summary']}
-
-RESEARCH DATA:
-{batched_content}
-
-PROFESSIONAL ANALYSIS REQUIREMENTS:
-1. **Market Intelligence**: Present data within strategic business context
-2. **Competitive Landscape**: Highlight key players, market dynamics, and positioning
-3. **Technology Trends**: Identify innovation drivers and disruptive forces
-4. **Implementation Insights**: Showcase real-world case studies and best practices  
-5. **Business Implications**: Connect findings to strategic decision-making
-6. **Risk Assessment**: Identify challenges, barriers, and mitigation strategies
-
-WRITING STANDARDS:
-- Lead with executive insights, support with data
-- Transform raw information into strategic intelligence
-- Use professional attribution: "According to industry analysis from [source]..." 
-- Include specific metrics that demonstrate scale and trajectory
-- Organize with clear subheadings for easy navigation
-- Prioritize actionable insights over academic detail
-
-STRUCTURE GUIDELINES:
-- **Market Overview**: Size, growth, key dynamics
-- **Technology Analysis**: Current capabilities and emerging innovations  
-- **Case Studies**: Real-world implementations and lessons learned
-- **Strategic Implications**: What this means for market participants
-
-CITATION APPROACH:
-- Integrate sources naturally: "Research from McKinsey indicates..."
-- Provide credible context: "According to government data released in 2024..."
-- Emphasize authoritative sources: major consulting firms, industry associations, government agencies
-
-OUTPUT REQUIREMENTS:
-- Professional consulting report section
-- Clear strategic narrative with supporting evidence
-- Executive-appropriate language and insights
-- Logical flow from analysis to business implications"""
-
-                if previous_content:
-                    section_prompt += f"\n\nBUILD UPON PREVIOUS ANALYSIS:\n{previous_content}\n\nContinue the strategic narrative, avoiding redundancy while building comprehensive coverage."
-                
-                if is_last:
-                    section_prompt += "\n\nCONCLUSION: Synthesize this section with strategic implications and key takeaways for executives."
-                else:
-                    section_prompt += "\n\nCONTINUATION: Develop this analysis further - more detailed findings follow."
-
-                section_prompt += "\n\nIMPORTANT: Output professional analysis content only. No meta-commentary or process notes."
-
-                try:
-                    batch_content = llm.invoke(section_prompt).content
-                    
-                    # Enhanced content cleaning
-                    batch_content = clean_generated_content(batch_content)
-                    batch_content = remove_prompt_remnants(batch_content)
-                    
-                    section_content += batch_content + "\n"
-                    previous_content = section_content
-                except Exception as e:
-                    section_content += f"*Error generating batch content: {str(e)}*\n"
-            
-            report_sections.append(f"## {task_description}\n\n{section_content}\n")
-
-        # Conclusion
-        conclusion_prompt = f"""As a Senior Research Analyst at a leading global consultancy, write a comprehensive Strategic Implications & Recommendations section for this research report.
-
-RESEARCH TOPIC: {state.get('user_query', 'Not specified')}
-
-KEY FINDINGS SUMMARY:
-{chr(10).join([f"- {task['description']}: {ledger_map.get(task['id'], {}).get('findings_summary', 'Analysis in progress')}" for task in plan])}
-
-STRATEGIC IMPLICATIONS REQUIREMENTS:
-1. **Market Trajectory**: Where is this industry/sector heading? What are the key inflection points?
-2. **Investment Thesis**: What opportunities present the highest return potential?
-3. **Strategic Priorities**: What should business leaders prioritize in the next 12-24 months?
-4. **Risk Mitigation**: What are the primary risks and how can they be managed?
-5. **Competitive Advantage**: How can organizations position themselves to win?
-
-RECOMMENDATIONS FRAMEWORK:
-- **Immediate Actions** (0-6 months): Tactical steps for quick wins
-- **Strategic Initiatives** (6-18 months): Medium-term capability building  
-- **Long-term Positioning** (18+ months): Future market preparation
-
-EXECUTIVE COMMUNICATION STYLE:
-- Lead with business impact and competitive implications
-- Provide specific, actionable recommendations with clear rationale
-- Include investment and resource allocation guidance
-- Address both opportunities and risks with balanced perspective
-- Use authoritative, confident language appropriate for C-suite audience
-
-CONCLUSION STRUCTURE:
-1. **Strategic Synthesis**: Connect findings to broader market dynamics
-2. **Key Recommendations**: 3-4 priority actions with business rationale
-3. **Future Outlook**: Market evolution and emerging opportunities
-4. **Next Steps**: Specific actions for continued competitive advantage
-
-IMPORTANT: Write as a senior consultant presenting to executive leadership. Focus on strategic implications and actionable intelligence rather than academic conclusions."""
-
-        try:
-            conclusion = llm.invoke(conclusion_prompt).content
-            conclusion = clean_generated_content(conclusion)
-            report_sections.append(f"## Strategic Implications & Recommendations\n\n{conclusion}\n")
-        except Exception as e:
-            report_sections.append(f"## Strategic Implications & Recommendations\n\n*Strategic analysis and recommendations section is being finalized to provide executive-level insights and actionable guidance.*\n")
-
-        # Assemble final report
-        final_report_markdown = "\n\n---\n\n".join(report_sections)
+        # Convert citations to readable format
+        research_dataset = convert_citations_to_readable(research_dataset, source_mapping)
         
-        # Final quality check and cleaning
-        final_report_markdown = final_quality_check(final_report_markdown)
+        # Apply token limits to prevent API overload
+        research_dataset_batches = split_by_tokens([research_dataset], max_tokens=120000)
+        final_research_data = "\n\n".join(research_dataset_batches[0]) if research_dataset_batches else ""
+        
+        # REPORT-LEVEL ENHANCEMENT: Analyze if additional targeted content is needed
+        try:
+            from agent.report_level_enhancement import integrate_report_enhancement_into_finalize
+            
+            # Convert sources_gathered to the format expected by report enhancement
+            available_sources = []
+            for source in sources_gathered:
+                if isinstance(source, dict):
+                    available_sources.append({
+                        'title': source.get('title', ''),
+                        'url': source.get('url', ''),
+                        'snippet': source.get('snippet', '')
+                    })
+            
+            print(f"🎯 启动报告级别增强分析...")
+            enhanced_research_data, enhancement_results = integrate_report_enhancement_into_finalize(
+                user_query=user_query,
+                research_plan=plan,
+                aggregated_research_data=final_research_data,
+                available_sources=available_sources,
+                config=config
+            )
+            
+            # Use enhanced data if available
+            final_research_data = enhanced_research_data
+            
+            # Log enhancement results
+            successful_enhancements = [r for r in enhancement_results if r.success]
+            if successful_enhancements:
+                print(f"✅ 报告级别增强成功: {len(successful_enhancements)} 个增强点")
+                for result in successful_enhancements:
+                    print(f"   - 质量: {result.enhancement_quality}, 源数量: {len(result.sources_used)}")
+            else:
+                print("ℹ️  报告级别增强: 未执行或无有效增强")
+                
+        except Exception as e:
+            print(f"⚠️ 报告级别增强异常，继续使用原始数据: {str(e)}")
+            # Continue with original data if enhancement fails
+        
+        # Generate integrated report using the enhanced holistic approach
+        formatted_prompt = integrated_report_instructions.format(
+            user_query=user_query,
+            research_plan_summary=research_plan_summary,
+            comprehensive_research_data=final_research_data
+        )
+        
+        print(f"🔄 Generating integrated report for: {user_query}")
+        print(f"📊 Research data length: {len(final_research_data)} characters")
+        print(f"📋 Tasks integrated: {len(plan)} research streams")
+        
+        # Generate the final integrated report
+        integrated_report = llm.invoke(formatted_prompt).content
+        
+        # Apply final quality improvements
+        integrated_report = clean_generated_content(integrated_report)
+        integrated_report = remove_prompt_remnants(integrated_report)
+        integrated_report = final_quality_check(integrated_report)
+        
+        print(f"✅ Integrated report generated: {len(integrated_report)} characters")
         
         return {
-            "messages": [AIMessage(content=final_report_markdown)],
-            "final_report_markdown": final_report_markdown
+            "messages": [AIMessage(content=integrated_report)],
+            "final_report_markdown": integrated_report
         }
+        
     except Exception as e:
-        error_message = f"Error generating final report: {str(e)}"
+        error_message = f"Error generating integrated report: {str(e)}"
+        print(f"❌ {error_message}")
         return {
             "messages": [AIMessage(content=error_message)],
             "final_report_markdown": error_message
@@ -717,7 +665,8 @@ def build_source_mapping(sources_gathered):
     mapping = {}
     for i, source in enumerate(sources_gathered):
         # Extract domain from URL for readable citation
-        domain = extract_domain(source.get("value", ""))
+        original_url = source.get("value", "")
+        domain = extract_domain(original_url)
         label = source.get("label", domain)
         
         # Create mapping for different citation formats
@@ -731,8 +680,19 @@ def build_source_mapping(sources_gathered):
                 mapping[citation_id] = {
                     "label": label,
                     "domain": domain,
-                    "value": source.get("value", "")
+                    "value": original_url if original_url and not original_url.startswith('https://vertexaisearch') else ""
                 }
+        
+        # Also try direct URL mapping if available
+        if original_url and not original_url.startswith('https://vertexaisearch'):
+            # Create a simple mapping using domain as key
+            domain_key = domain.lower().replace(' ', '')
+            mapping[domain_key] = {
+                "label": label,
+                "domain": domain,  
+                "value": original_url
+            }
+    
     return mapping
 
 def extract_domain(url):
@@ -757,22 +717,50 @@ def extract_domain(url):
     return "Web Source"
 
 def convert_citations_to_readable(content, source_mapping):
-    """将原始引用标记转换为可读的引用格式"""
+    """Convert raw citation markers to readable, verifiable citation formats with complete source information"""
     import re
     
     def replace_citation(match):
         citation_id = match.group(1)
         if citation_id in source_mapping:
             source_info = source_mapping[citation_id]
-            return f"[Source: {source_info['domain']}]"
-        return ""
+            # Create comprehensive citation with verifiable information
+            domain = source_info.get('domain', 'Unknown Source')
+            url = source_info.get('value', '')
+            label = source_info.get('label', domain)
+            
+            # Format: [Source: Domain (URL)] for verifiability
+            if url and url.startswith('http') and 'vertexaisearch.cloud.google.com' not in url:
+                return f"[Source: {label} ({url})]"
+            else:
+                return f"[Source: {label}]"
+        return f"[Source: {citation_id}]"  # Fallback with original ID
     
-    # Convert Vertex AI citations
+    # Convert Vertex AI citations with full source information
     content = re.sub(r'\[vertexaisearch\.cloud\.google\.com/id/([^\]]+)\]', 
                      replace_citation, content)
     
-    # Convert other citation formats
-    content = re.sub(r'\[([a-z0-9\-]+)\]', r'[Source: \1]', content)
+    # Convert other citation formats while preserving source identification
+    content = re.sub(r'\[([a-z0-9\-]+)\]', replace_citation, content)
+    
+    # Clean up any remaining malformed citations
+    content = clean_malformed_citations(content)
+    
+    return content
+
+def clean_malformed_citations(content):
+    """Clean up malformed citation formats in content"""
+    import re
+    
+    # Fix mixed citation formats like [Source: domain](https://vertexaisearch...)
+    content = re.sub(r'\[Source: ([^\]]+)\]\(https://vertexaisearch\.cloud\.google\.com[^)]*\)', 
+                     r'[Source: \1]', content)
+    
+    # Remove any remaining vertexaisearch URLs that shouldn't be there
+    content = re.sub(r'\(https://vertexaisearch\.cloud\.google\.com[^)]*\)', '', content)
+    
+    # Fix double closing brackets
+    content = re.sub(r'\]\]', ']', content)
     
     return content
 
@@ -819,10 +807,25 @@ def remove_prompt_remnants(content):
     return content.strip()
 
 def final_quality_check(content):
-    """最终质量检查和清理"""
-    # Remove any remaining citation URLs
+    """Final quality check and cleanup while preserving citation URLs and source information"""
     import re
-    content = re.sub(r'https?://[^\s\]]+', '', content)
+    
+    # Remove standalone URLs that are NOT part of citations
+    # Use a different approach to preserve citation URLs
+    lines = content.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        # Check if the line contains a citation with URL
+        if '[Source:' in line and 'http' in line:
+            # Keep lines with citations intact
+            cleaned_lines.append(line)
+        else:
+            # Remove standalone URLs from lines without citations
+            cleaned_line = re.sub(r'\bhttps?://[^\s\[\]]+', '', line)
+            cleaned_lines.append(cleaned_line)
+    
+    content = '\n'.join(cleaned_lines)
     
     # Fix spacing issues
     content = re.sub(r'\n{3,}', '\n\n', content)
@@ -833,6 +836,12 @@ def final_quality_check(content):
     
     # Ensure proper spacing around headers
     content = re.sub(r'\n(#+[^\n]+)\n', r'\n\n\1\n\n', content)
+    
+    # Clean up extra spaces around citations
+    content = re.sub(r'\s+(\[Source:[^\]]+\])', r' \1', content)
+    
+    # Final citation cleanup
+    content = clean_malformed_citations(content)
     
     return content.strip()
 
@@ -1005,9 +1014,9 @@ builder.add_node("planner", planner_node)
 builder.add_node("generate_query", generate_query)
 builder.add_node("web_research", web_research)
 builder.add_node("reflection", reflection)
-builder.add_node("content_enhancement", content_enhancement_analysis)  # 新增内容增强节点
-builder.add_node("evaluate_research_enhanced", evaluate_research_enhanced)  # 新增增强版评估节点
-builder.add_node("record_task_completion", record_task_completion_node)  # New node for Day 2
+builder.add_node("content_enhancement", content_enhancement_analysis)  # Enhanced content analysis node
+builder.add_node("evaluate_research_enhanced", evaluate_research_enhanced)  # Enhanced research evaluation node
+builder.add_node("record_task_completion", record_task_completion_node)  # Task completion recording node
 builder.add_node("finalize_answer", finalize_answer)
 
 # Set the entrypoint as `planner`
@@ -1022,7 +1031,7 @@ builder.add_conditional_edges(
 # Reflect on the web research
 builder.add_edge("web_research", "reflection")
 
-# 修改reflection后的路由逻辑 - 添加智能内容增强判断
+# Modified routing logic after reflection - added intelligent content enhancement decision
 builder.add_conditional_edges(
     "reflection", 
     should_enhance_content, 
@@ -1032,14 +1041,14 @@ builder.add_conditional_edges(
     }
 )
 
-# 内容增强完成后进入评估阶段
+# Enter evaluation phase after content enhancement completion
 builder.add_edge("content_enhancement", "evaluate_research_enhanced")
 
-# 评估完成后决定下一步 - 继续研究或完成任务
+# Decide next step after evaluation completion - continue research or complete task
 builder.add_conditional_edges(
     "evaluate_research_enhanced", 
     decide_next_research_step, 
-    ["web_research", "record_task_completion"]  # 可以路由到这两个目标
+    ["web_research", "record_task_completion"]  # Can route to these two targets
 )
 
 # 当decide_next_research_step返回"continue_research"时，使用follow-up查询

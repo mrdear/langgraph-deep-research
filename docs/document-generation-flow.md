@@ -13,7 +13,9 @@
 9. [Content Quality Assurance](#content-quality-assurance)
 10. [Performance Optimization](#performance-optimization)
 11. [System Fixes and Improvements](#system-fixes-and-improvements)
-12. [Future Enhancements](#future-enhancements)
+12. [Report-Level Content Enhancement](#report-level-content-enhancement)
+13. [Citation System and URL Management](#citation-system-and-url-management)
+14. [Future Enhancements](#future-enhancements)
 
 ## Overview
 
@@ -27,8 +29,9 @@ The primary goal of this agent is to address the limitations of traditional sing
 2. **Conducting iterative research** with reflection and refinement cycles
 3. **Maintaining context coherence** across multiple research phases
 4. **Generating comprehensive reports** that leverage the full context window of modern LLMs
-5. **Ensuring factual accuracy** through proper citation and source management
+5. **Ensuring factual accuracy** through proper citation and source management with real, accessible URLs
 6. **Tracking task-specific results** for detailed content synthesis
+7. **Implementing dual-layer content enhancement** for comprehensive information coverage
 
 ### System Architecture Philosophy
 
@@ -39,7 +42,8 @@ The agent follows a **multi-agent orchestration pattern** where specialized node
 - **Web Research Agent**: Executes searches and synthesizes findings with task association
 - **Reflection Agent**: Evaluates research completeness and identifies gaps
 - **Task Coordinator**: Manages multi-task workflows and state transitions
-- **Document Synthesizer**: Generates final comprehensive reports using batch processing
+- **Report-Level Enhancer**: Performs targeted deep enhancement for identified information gaps
+- **Document Synthesizer**: Generates final comprehensive reports using batch processing with real citation URLs
 
 ## Architecture and Design Principles
 
@@ -356,7 +360,7 @@ The research process incorporates:
 
 #### Citation and Source Management
 
-The system implements sophisticated source tracking:
+The system implements sophisticated source tracking with real URL preservation:
 
 ```python
 resolved_urls = resolve_urls(
@@ -369,8 +373,8 @@ modified_text = insert_citation_markers(response.text, citations)
 
 This ensures:
 - **Attribution Accuracy**: Every claim is linked to its source
-- **URL Management**: Long URLs are converted to manageable references
-- **Citation Integration**: Sources are seamlessly embedded in the research text
+- **Real URL Preservation**: Original URLs are maintained for user accessibility (FIXED)
+- **Citation Integration**: Sources are seamlessly embedded in the research text with verifiable links
 
 #### Error Handling and Resilience
 
@@ -685,7 +689,74 @@ Recent enhancements ensure:
 - **Citation Preservation**: Source information is maintained through task completion
 - **State Continuity**: Task context is properly managed across task transitions
 
-### 6. Document Synthesis Node (finalize_answer)
+### 6. Report-Level Enhancer
+
+The report-level enhancer performs targeted deep enhancement for identified information gaps.
+
+#### Enhanced State Management
+
+The enhancer includes fixes for proper state propagation:
+
+```python
+def enhance_report(state: OverallState, config: RunnableConfig) -> OverallState:
+    # Get current task context for focused enhancement
+    plan = state.get("plan")
+    pointer = state.get("current_task_pointer")
+    if plan and pointer is not None and pointer < len(plan):
+        research_topic = plan[pointer]["description"]  # Use current task description
+    else:
+        research_topic = state.get("user_query") or get_research_topic(state["messages"])
+    
+    # Perform report enhancement
+    result = llm.with_structured_output(ReportEnhancer).invoke(formatted_prompt)
+
+    # FIXED: Ensure state propagation
+    return {
+        "plan": state.get("plan", []),          # Propagate plan
+        "current_task_pointer": state.get("current_task_pointer", 0),  # Propagate pointer
+        "final_report_markdown": result.enhanced_report
+    }
+```
+
+#### Enhanced Report Generation
+
+The enhancer generates a comprehensive, well-structured report:
+
+```python
+def generate_report(state: OverallState, config: RunnableConfig) -> str:
+    # Get current task context for focused report generation
+    plan = state.get("plan")
+    pointer = state.get("current_task_pointer")
+    if plan and pointer is not None and pointer < len(plan):
+        research_topic = plan[pointer]["description"]  # Use current task description
+    else:
+        research_topic = state.get("user_query") or get_research_topic(state["messages"])
+    
+    # Generate report content
+    report_content = f"""
+    {research_topic}
+
+    {_summarize_task_findings(research_topic, state["web_research_result"], config)}
+    """
+    
+    # Append task-specific findings
+    for task in plan:
+        if task["status"] == "completed":
+            report_content += f"""
+    {task["description"]}
+
+    {_summarize_task_findings(task["description"], state["task_specific_results"], config)}
+    """
+    
+    return report_content
+```
+
+This ensures:
+- **Comprehensive Coverage**: All research findings are utilized in the final report
+- **Logical Structure**: Information flows logically from general to specific
+- **Context Preservation**: Task-specific findings are integrated seamlessly
+
+### 7. Document Synthesizer
 
 The document synthesis node represents the culmination of the research process, transforming accumulated findings into comprehensive, well-structured reports.
 
@@ -1252,6 +1323,29 @@ The fixes provide significant improvements in system reliability and output qual
 3. **Report Quality**: Final reports utilize full research context through proper task organization
 4. **System Resilience**: Graceful degradation during API failures with preserved task context
 
+### Recent Critical Fixes (Latest Updates)
+
+#### Citation URL Management Fix (December 2024)
+
+**Problem**: All citations in generated reports pointed to inaccessible `vertexaisearch.cloud.google.com` internal URLs instead of real source URLs.
+
+**Solution**: Modified `resolve_urls` function in `utils.py` to preserve original URLs:
+```python
+# Fixed to preserve real URLs instead of creating fake ones
+resolved_map[url] = url  # Keep original URL
+```
+
+**Impact**: Citations now provide real, accessible URLs for source verification.
+
+#### Report-Level Enhancement System (December 2024)
+
+**Addition**: Implemented dual-layer content enhancement system with:
+- Pre-analysis for information gap identification
+- Targeted Firecrawl integration for specific missing data
+- Quality assessment and smart enhancement decisions
+
+**Impact**: Comprehensive reports with targeted deep enhancement for identified gaps.
+
 ### Monitoring and Maintenance
 
 Ongoing monitoring includes:
@@ -1259,6 +1353,186 @@ Ongoing monitoring includes:
 - Ledger entry completeness tracking
 - Error rate monitoring with task context preservation
 - Report quality assessment through content metrics
+- Citation URL accessibility validation (NEW)
+- Report-level enhancement effectiveness tracking (NEW)
+
+## Report-Level Content Enhancement
+
+The report-level content enhancement system represents a significant innovation that addresses information gaps identified during the final report synthesis phase. This dual-layer enhancement approach ensures comprehensive coverage of research topics.
+
+### Architectural Overview
+
+The report-level enhancement system operates as a pre-analysis step in the `finalize_answer` node, where the LLM can identify specific information gaps before generating the final report. This targeted approach differs from task-level enhancement by focusing on cross-task information needs and synthesis requirements.
+
+#### Key Components
+
+1. **ReportLevelEnhancer**: Main enhancement coordination class
+2. **Enhancement Request Analysis**: LLM-powered gap identification 
+3. **Targeted Firecrawl Integration**: Selective deep web scraping
+4. **Quality Assessment**: Enhancement effectiveness evaluation
+
+### Implementation Strategy
+
+The enhancement process follows a structured approach:
+
+```python
+def integrate_report_enhancement_into_finalize(
+    user_query: str,
+    research_plan: List[Dict],
+    aggregated_research_data: str,
+    available_sources: List[Dict[str, Any]],
+    config: RunnableConfig
+) -> Tuple[str, List[ReportEnhancementResult]]:
+    enhancer = ReportLevelEnhancer()
+    
+    # 1. Analyze enhancement needs
+    enhancement_requests = enhancer.analyze_report_enhancement_needs(
+        user_query, research_plan, aggregated_research_data, config
+    )
+    
+    if not enhancement_requests:
+        print("✅ Report-level analysis: Current information is sufficient")
+        return aggregated_research_data, []
+    
+    # 2. Execute targeted enhancement
+    enhancement_results = enhancer.execute_targeted_enhancement(
+        enhancement_requests, available_sources
+    )
+    
+    # 3. Merge enhanced content
+    enhanced_data = aggregated_research_data
+    successful_enhancements = [r for r in enhancement_results if r.success]
+    if successful_enhancements:
+        for result in successful_enhancements:
+            enhanced_data += f"\n\n## Report-Level Deep Enhancement\n{result.enhanced_content}"
+    
+    return enhanced_data, enhancement_results
+```
+
+### Enhancement Types and Targeting
+
+The system identifies several categories of enhancement needs:
+
+1. **Specific Data & Statistics**: Quantitative data gaps
+2. **Implementation Cases & Technical Details**: Concrete examples and technical specifications  
+3. **Market Data & Competitive Analysis**: Current market information
+4. **Policies, Regulations & Standards**: Regulatory framework coverage
+
+### Quality Assurance
+
+Enhancement results undergo quality assessment:
+
+```python
+def _assess_enhancement_quality(content: str, request: ReportEnhancementRequest) -> str:
+    length = len(content)
+    target_keywords = request.target_information.lower().split()
+    keyword_matches = sum(1 for keyword in target_keywords if keyword in content.lower())
+    keyword_ratio = keyword_matches / len(target_keywords) if target_keywords else 0
+    
+    if length > 2000 and keyword_ratio > 0.6:
+        return "excellent"
+    elif length > 1000 and keyword_ratio > 0.4:
+        return "good" 
+    elif length > 500 and keyword_ratio > 0.2:
+        return "fair"
+    else:
+        return "poor"
+```
+
+## Citation System and URL Management
+
+### Critical URL Management Fix
+
+A major system improvement addressed a fundamental flaw in the citation URL system that was generating inaccessible references for users.
+
+#### Problem Identification
+
+Analysis of production results revealed that citations contained URLs in the format:
+```
+[source](https://vertexaisearch.cloud.google.com/id/x-x)
+```
+
+These URLs were Google Vertex AI Search internal references, not accessible to end users, rendering the entire citation system ineffective for source verification.
+
+#### Root Cause Analysis
+
+The issue originated in the `resolve_urls` function in `utils.py`:
+
+```python
+# PROBLEMATIC ORIGINAL IMPLEMENTATION
+def resolve_urls(urls_to_resolve: List[Any], id: int) -> Dict[str, str]:
+    prefix = f"https://vertexaisearch.cloud.google.com/id/"
+    urls = [site.web.uri for site in urls_to_resolve]
+    for idx, url in enumerate(urls):
+        if url not in resolved_map:
+            resolved_map[url] = f"{prefix}{id}-{idx}"  # Creates fake URLs!
+```
+
+This function incorrectly transformed real, accessible URLs into fake internal references.
+
+#### Solution Implementation
+
+The fix preserves original URLs while maintaining the deduplication functionality:
+
+```python
+# FIXED IMPLEMENTATION
+def resolve_urls(urls_to_resolve: List[Any], id: int) -> Dict[str, str]:
+    """
+    Create a map that preserves the original URLs instead of replacing them with fake internal IDs.
+    This ensures citations point to real, accessible web sources.
+    """
+    urls = [site.web.uri for site in urls_to_resolve]
+    resolved_map = {}
+    for idx, url in enumerate(urls):
+        if url not in resolved_map:
+            resolved_map[url] = url  # Keep the original URL!
+    return resolved_map
+```
+
+#### Impact Assessment
+
+The fix provides several critical improvements:
+
+1. **User Accessibility**: Citations now point to real, clickable URLs
+2. **Source Verification**: Users can verify information by accessing original sources
+3. **Professional Standards**: Reports meet academic and professional citation requirements
+4. **System Integrity**: No loss of source tracking functionality
+
+#### Enhanced Citation Processing
+
+The citation system now properly handles URL preservation through the entire pipeline:
+
+```python
+def convert_citations_to_readable(content, source_mapping):
+    def replace_citation(match):
+        citation_id = match.group(1)
+        if citation_id in source_mapping:
+            source_info = source_mapping[citation_id]
+            domain = source_info.get('domain', 'Unknown Source')
+            url = source_info.get('value', '')
+            label = source_info.get('label', domain)
+            
+            # Format with real, accessible URLs
+            if url and url.startswith('http') and 'vertexaisearch.cloud.google.com' not in url:
+                return f"[Source: {label} ({url})]"
+            else:
+                return f"[Source: {label}]"
+        return f"[Source: {citation_id}]"
+    
+    # Convert citations while preserving real URLs
+    content = re.sub(r'\[vertexaisearch\.cloud\.google\.com/id/([^\]]+)\]', 
+                     replace_citation, content)
+    return content
+```
+
+### Citation Quality Validation
+
+The system now includes validation to ensure citation quality:
+
+1. **URL Accessibility**: Verification that URLs are not internal system references
+2. **Source Attribution**: Proper linking of content to original sources
+3. **Format Consistency**: Standardized citation format across reports
+4. **Completeness**: All factual claims include appropriate source attribution
 
 ## Future Enhancements
 
