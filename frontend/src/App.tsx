@@ -36,7 +36,7 @@ export default function App() {
   }>({
     apiUrl: import.meta.env.DEV
       ? "http://localhost:2024"
-      : "http://localhost:8123",
+      : window.location.origin,
     assistantId: "agent",
     messagesKey: "messages",
     onFinish: (state) => {
